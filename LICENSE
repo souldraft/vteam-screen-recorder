@@ -1,0 +1,27 @@
+VTeam Screen Recorder
+Copyright (c) 2026 Shiva Kaja. All rights reserved.
+
+The source code, build scripts, documentation and website in this repository
+("the Software") are published so that you can read them, see how the app works,
+and build it for your own personal use on your own computer.
+
+You MAY:
+  - read and study the Software;
+  - build the Software and run your build for your own personal, non-commercial use.
+
+You MAY NOT, without written permission from the copyright holder:
+  - copy, publish, distribute, sublicense, rent or sell the Software or any build
+    of it, in whole or in part, including modified versions;
+  - use the Software, its name or its look to offer a competing product or service.
+
+Third-party components are not covered by this licence. They keep their own
+licences: see THIRD_PARTY_NOTICES.md and selfie_segmentation.LICENSE.txt.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Permission requests: vteam732@gmail.com

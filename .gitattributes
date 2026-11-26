@@ -1,0 +1,5 @@
+# Keep Windows line endings in batch files exactly as committed (also in GitHub ZIP downloads)
+*.bat -text
+*.ico binary
+*.png binary
+*.onnx binary
