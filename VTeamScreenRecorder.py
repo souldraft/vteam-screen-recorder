@@ -734,6 +734,45 @@ def upi_qr_png(link: str, scale: int = 8) -> bytes:
     return buf.getvalue()
 
 
+# ---- Update check: once a day, ask GitHub for the newest release (public, no key; nothing personal is sent)
+UPDATE_REPO = "souldraft/vteam-screen-recorder"
+UPDATE_API = f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"
+UPDATE_PAGE = f"https://github.com/{UPDATE_REPO}/releases/latest"
+UPDATE_EVERY_S = 24 * 3600
+
+
+def parse_version(text):
+    """'v2.1.0' or '2.1' -> (2, 1, 0); anything else (pre-release tags, junk) -> None."""
+    m = re.match(r"^\s*v?(\d+)\.(\d+)(?:\.(\d+))?\s*$", str(text or ""))
+    return tuple(int(x or 0) for x in m.groups()) if m else None
+
+
+def is_newer(latest, current: str = APP_VERSION) -> bool:
+    a, b = parse_version(latest), parse_version(current)
+    return bool(a and b and a > b)
+
+
+def safe_release_page(page) -> str:
+    """Only ever open this app's own GitHub releases page."""
+    page = str(page or "")
+    return page if page.startswith(f"https://github.com/{UPDATE_REPO}/releases/") else UPDATE_PAGE
+
+
+def fetch_latest_release(url: str = UPDATE_API, timeout: int = 10):
+    """(version, releases page) of the newest published release, or None (offline, no release...). Never raises."""
+    try:
+        req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json",
+                                                   "User-Agent": f"{APP_NAME}/{APP_VERSION}"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            info = json.loads(decode(r.read(300000)))
+        tag = str(info.get("tag_name") or "")
+        if info.get("draft") or info.get("prerelease") or not parse_version(tag):
+            return None
+        return tag.strip().lstrip("v"), safe_release_page(info.get("html_url"))
+    except Exception:
+        return None
+
+
 class FriendlyError(Exception):
     def __init__(self, message: str, details: str = ""):
         super().__init__(message)
@@ -1774,6 +1813,42 @@ def selftest() -> int:
     except ImportError:
         print("  info  segno not installed here; QR picture test skipped (the Donate dialog shows the UPI ID)")
     check("DONATE_UPI_ID is a real UPI ID", is_upi_id(DONATE_UPI_ID))
+    print("\nUpdate check:")
+    check("reads 'v2.1.0' and '2.1'", parse_version("v2.1.0") == (2, 1, 0) and parse_version("2.1") == (2, 1, 0))
+    check("ignores junk and pre-release tags", parse_version("latest") is None and parse_version("v2.1.0-beta") is None)
+    check("v99.0.0 counts as newer", is_newer("v99.0.0"))
+    check("this version or an older one doesn't", not is_newer(APP_VERSION) and not is_newer("v0.1.0"))
+    try:
+        import http.server
+        replies = []
+
+        class _FakeGitHub(http.server.BaseHTTPRequestHandler):  # answers like api.github.com/.../releases/latest
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                body = json.dumps(replies[0]).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+        for var in ("no_proxy", "NO_PROXY"):  # the fake server is on this PC: never route it through a proxy
+            os.environ[var] = ",".join(x for x in (os.environ.get(var), "127.0.0.1", "localhost") if x)
+        srv = http.server.HTTPServer(("127.0.0.1", 0), _FakeGitHub)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        url = f"http://127.0.0.1:{srv.server_port}/latest"
+        own = f"https://github.com/{UPDATE_REPO}/releases/tag/v9.9.9"
+        replies[:] = [{"tag_name": "v9.9.9", "html_url": own}]
+        check("finds the newest release (local test server)", fetch_latest_release(url, 5) == ("9.9.9", own))
+        replies[:] = [{"tag_name": "v9.9.9", "html_url": "https://evil.example/x"}]
+        check("only ever opens this app's own releases page", fetch_latest_release(url, 5) == ("9.9.9", UPDATE_PAGE))
+        replies[:] = [{"tag_name": "v9.9.9", "prerelease": True, "html_url": own}]
+        check("pre-releases are ignored", fetch_latest_release(url, 5) is None)
+        srv.shutdown()
+        check("no internet -> no update and no error", fetch_latest_release("http://127.0.0.1:9/x", 3) is None)
+    except Exception as e:
+        check(f"local update test ran ({type(e).__name__}: {e})", False)
     print("\n" + ("ALL TESTS PASSED" if not failures else f"{len(failures)} TEST(S) FAILED: {', '.join(failures)}"))
     return 0 if not failures else 1
 
@@ -2044,6 +2119,13 @@ if ctk is not None:
             self.lbl_sid = ctk.CTkLabel(bar, text=self._sid_text(), font=self.f_chip, text_color=MUTED)
             self.lbl_sid.pack(side="left", padx=(14, 0))
             self.lbl_sid.bind("<Button-1>", lambda e: self._copy_support_id())
+            # "New version" pill: hidden until the once-a-day update check finds a newer release on GitHub
+            self.btn_newver = ctk.CTkButton(bar, text="", width=10, height=28, font=self.f_small_b, corner_radius=14,
+                                            fg_color="#DAFBE1", hover_color="#BFE8C9", text_color=GREEN,
+                                            border_width=1, border_color="#A7E3B7",
+                                            command=lambda: webbrowser.open(safe_release_page(self._update_page)))
+            self._update_page = UPDATE_PAGE
+            self._update_logged = False
             self.btn_support = self._button(bar, "💬 Support", self._show_support, width=112, height=28,
                                             font=self.f_small)
             self.btn_support.pack(side="right")
@@ -2156,6 +2238,11 @@ if ctk is not None:
                 self.chips[key] = chip
             ctk.CTkLabel(self.tools_menu, text="FFmpeg records the screen and saves the MP4.", font=self.f_chip,
                          text_color=MUTED, anchor="w").pack(fill="x", padx=14, pady=(6, 10))
+            self.update_var = tk.BooleanVar(value=bool(self.settings.get("update_check", True)))
+            ctk.CTkCheckBox(self.tools_menu, text="Check for new versions (once a day)", variable=self.update_var,
+                            command=self._update_setting_changed, font=self.f_chip, text_color=MUTED,
+                            fg_color=GREEN, hover_color=GREEN_HOVER, border_color=BORDER, checkbox_width=18,
+                            checkbox_height=18).pack(anchor="w", padx=14, pady=(0, 10))
             self.tools_menu_open = False
             # close on a click anywhere else, or on Esc (bind_all so the window's own Esc binding is kept)
             self.bind_all("<Button-1>", self._tools_menu_click_outside, add="+")
@@ -2579,6 +2666,53 @@ if ctk is not None:
             self.term.delete("1.0", "end")
             self.term.configure(state="disabled")
 
+        # ------------------------------------------------------------- update check
+        def _update_setting_changed(self):
+            on = bool(self.update_var.get())
+            self.settings.set("update_check", on)
+            if on:
+                self._maybe_check_updates(force=True)
+            else:
+                self.btn_newver.pack_forget()
+
+        def _maybe_check_updates(self, force=False):
+            """At start-up: show what the last check found, and ask GitHub again if that was a day ago."""
+            if not self.settings.get("update_check", True):
+                return
+            cached = self.settings.get("update_latest")
+            if isinstance(cached, str) and is_newer(cached):
+                self._update_found(cached, self.settings.get("update_page"))
+            try:
+                last = float(self.settings.get("update_last") or 0)
+            except (TypeError, ValueError):
+                last = 0.0
+            if force or not 0 <= time.time() - last < UPDATE_EVERY_S:
+                threading.Thread(target=self._update_worker, daemon=True).start()
+
+        def _update_worker(self):
+            self.ui(self._update_checked, fetch_latest_release())
+
+        def _update_checked(self, found):
+            self.settings.set("update_last", time.time())
+            if not found:
+                return  # offline, or GitHub didn't answer: try again next time
+            ver, page = found
+            self.settings.set("update_latest", ver)
+            self.settings.set("update_page", page)
+            if is_newer(ver) and self.settings.get("update_check", True):
+                self._update_found(ver, page)
+            else:
+                self.btn_newver.pack_forget()
+
+        def _update_found(self, ver, page):
+            self._update_page = safe_release_page(page)
+            self.btn_newver.configure(text=f"⬆ New version v{ver}")
+            if not self.btn_newver.winfo_ismapped():
+                self.btn_newver.pack(side="left", padx=(12, 0))
+            if not self._update_logged:
+                self._update_logged = True
+                self._log(f"A new version, v{ver}, is available. Click '⬆ New version' at the top to get it.", "ok")
+
         # ------------------------------------------------------------- startup
         def _startup(self):
             self._log(f"{APP_NAME} {APP_VERSION} ready" + (" (running as Administrator)" if is_admin() else ""))
@@ -2600,6 +2734,7 @@ if ctk is not None:
             if self.settings.get("show_guide", True):
                 self._show_guide()  # opened before the FFmpeg check, so the install question waits for it
             threading.Thread(target=self._detect_tools_worker, args=(True,), daemon=True).start()
+            self.after(4000, self._maybe_check_updates)
 
         def _clean_stale_temp(self):
             folder = self.save_var.get()

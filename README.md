@@ -15,6 +15,8 @@ A free Windows screen recorder: **record the full screen as one MP4 with PC soun
 3. Double-click it. Windows may show a blue **"Windows protected your PC"** box because the app isn't code-signed yet: click **More info** → **Run anyway**.
 4. On first launch the app checks for **FFmpeg** and offers to install it for you (winget, or an official GitHub download as backup).
 
+> The app tells you when there's a newer version (a green **⬆ New version** button at the top; it checks GitHub once a day and you can turn it off under **FFMPEG ▾**).
+
 > Want to check the file? Each release lists the **SHA-256** of the .exe. In PowerShell: `Get-FileHash .\VTeamScreenRecorder.exe -Algorithm SHA256`
 
 ---
